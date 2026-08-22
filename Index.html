@@ -1,1 +1,799 @@
 
+
+Index · HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blessed Child Ventures - Stock Ledger</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+  window.firebaseModules = { initializeApp, getFirestore, doc, getDoc, setDoc, deleteDoc };
+  window.dispatchEvent(new Event('firebase-ready'));
+</script>
+<style>
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="padding:40px; text-align:center; color:#3D4B54;">Loading…</div>
+</div>
+<script type="text/babel" data-type="module">
+window.addEventListener('DOMContentLoaded', function() {
+  function boot() {
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<InventoryApp />);
+  }
+  if (window.firebaseModules) {
+    boot();
+  } else {
+    window.addEventListener('firebase-ready', boot, { once: true });
+  }
+});
+const { useState, useEffect, useCallback } = React;
+ 
+const firebaseConfig = {
+  apiKey: "AIzaSyB30Nl84NSTIV5f_BUXKFG4tktsmiWyY3Y",
+  authDomain: "bless-child-ventures.firebaseapp.com",
+  projectId: "bless-child-ventures",
+  storageBucket: "bless-child-ventures.firebasestorage.app",
+  messagingSenderId: "84197013925",
+  appId: "1:84197013925:web:15b93e84f31e08bd2ed04c",
+};
+ 
+const { initializeApp, getFirestore, doc, getDoc, setDoc, deleteDoc } = window.firebaseModules;
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+ 
+// Simple replacement for storage, backed by Firestore.
+// shared=true  -> collection "shared", visible to everyone
+// shared=false -> collection "local", stored per-browser using localStorage (personal, e.g. "who am I signed in as")
+const storage = {
+  async get(key, shared) {
+    if (!shared) {
+      const v = localStorage.getItem('inv_' + key);
+      return v === null ? null : { key, value: v, shared: false };
+    }
+    const snap = await getDoc(doc(db, 'shared', key));
+    if (!snap.exists()) return null;
+    return { key, value: snap.data().value, shared: true };
+  },
+  async set(key, value, shared) {
+    if (!shared) {
+      localStorage.setItem('inv_' + key, value);
+      return { key, value, shared: false };
+    }
+    await setDoc(doc(db, 'shared', key), { value });
+    return { key, value, shared: true };
+  },
+  async delete(key, shared) {
+    if (!shared) {
+      localStorage.removeItem('inv_' + key);
+      return { key, deleted: true, shared: false };
+    }
+    await deleteDoc(doc(db, 'shared', key));
+    return { key, deleted: true, shared: true };
+  },
+};
+ 
+const CATS = ['General', 'Electronics', 'Apparel', 'Food & Bev', 'Hardware', 'Office'];
+ 
+function genSKU(existing) {
+  let n;
+  do { n = 'SKU-' + String(Math.floor(1000 + Math.random() * 9000)); }
+  while (existing.some(p => p.sku === n));
+  return n;
+}
+ 
+function Barcode({ seed }) {
+  const bars = [];
+  let s = 0;
+  for (let i = 0; i < seed.length; i++) s += seed.charCodeAt(i) * (i + 1);
+  for (let i = 0; i < 28; i++) {
+    s = (s * 9301 + 49297) % 233280;
+    const w = 1 + (s % 3);
+    bars.push(w);
+  }
+  return (
+    <svg width="100%" height="24" viewBox={`0 0 ${bars.reduce((a, b) => a + b, 0) + bars.length} 24`} preserveAspectRatio="none">
+      {(() => {
+        let x = 0;
+        return bars.map((w, i) => {
+          const rect = i % 2 === 0 ? (
+            <rect key={i} x={x} y="0" width={w} height="24" fill="#1B1F1D" />
+          ) : null;
+          x += w + 1;
+          return rect;
+        });
+      })()}
+    </svg>
+  );
+}
+ 
+function Gauge({ pct, tone }) {
+  const color = tone === 'critical' ? '#C1502E' : tone === 'low' ? '#E2A83C' : '#5C8A63';
+  return (
+    <div style={{ height: 6, background: '#D9DACF', borderRadius: 0, overflow: 'hidden', border: '1px solid #1B1F1D22' }}>
+      <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width .3s' }} />
+    </div>
+  );
+}
+ 
+function playAlert(critical) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.value = critical ? 440 : 660;
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.2);
+    if (critical) {
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.type = 'square';
+      osc2.frequency.value = 440;
+      gain2.gain.setValueAtTime(0.001, ctx.currentTime + 0.25);
+      gain2.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.26);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.43);
+      osc2.start(ctx.currentTime + 0.25);
+      osc2.stop(ctx.currentTime + 0.45);
+    }
+  } catch (e) { /* audio not available */ }
+}
+ 
+function InventoryApp() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [sharedPin, setSharedPin] = useState(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [newPinConfirm, setNewPinConfirm] = useState('');
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [currentPinCheck, setCurrentPinCheck] = useState('');
+  const [user, setUser] = useState(null);
+  const [nameInput, setNameInput] = useState('');
+  const [products, setProducts] = useState([]);
+  const [log, setLog] = useState([]);
+  const [confirmClearLog, setConfirmClearLog] = useState(false);
+  const [query, setQuery] = useState('');
+  const [catFilter, setCatFilter] = useState('All');
+  const [showAdd, setShowAdd] = useState(false);
+  const [adjustTarget, setAdjustTarget] = useState(null);
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustNote, setAdjustNote] = useState('');
+  const [adjustMode, setAdjustMode] = useState('in');
+  const [form, setForm] = useState({ name: '', sku: '', category: 'General', quantity: '', reorder: '', price: '' });
+  const [formError, setFormError] = useState('');
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+ 
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let p = [];
+      try {
+        const r = await storage.get('inventory-products', true);
+        p = r ? JSON.parse(r.value) : [];
+      } catch (e) { p = []; }
+      let l = [];
+      try {
+        const r = await storage.get('inventory-log', true);
+        l = r ? JSON.parse(r.value) : [];
+      } catch (e) { l = []; }
+      setProducts(p);
+      setLog(l);
+      try {
+        const pin = await storage.get('inventory-pin', true);
+        setSharedPin(pin && pin.value ? pin.value : null);
+      } catch (e) { setSharedPin(null); }
+      try {
+        const u = await storage.get('current-user-name', false);
+        if (u && u.value) { setUser(u.value); setNameInput(u.value); }
+      } catch (e) { /* no saved name */ }
+    } catch (e) {
+      setError('Could not load the manifest. Try refreshing.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+ 
+  useEffect(() => { loadAll(); }, [loadAll]);
+ 
+  async function setupPin() {
+    const p = newPin.trim();
+    if (p.length < 4) { setPinError('PIN must be at least 4 digits.'); return; }
+    if (p !== newPinConfirm.trim()) { setPinError('PINs don\u2019t match.'); return; }
+    try {
+      await storage.set('inventory-pin', p, true);
+      setSharedPin(p);
+      setUnlocked(true);
+      setPinError('');
+    } catch (e) { setPinError('Could not save the PIN. Try again.'); }
+  }
+ 
+  function checkPin() {
+    if (pinInput.trim() === sharedPin) {
+      setUnlocked(true);
+      setPinError('');
+    } else {
+      setPinError('Wrong PIN. Try again.');
+    }
+  }
+ 
+  async function changePin() {
+    const p = newPin.trim();
+    if (p.length < 4) { setPinError('New PIN must be at least 4 digits.'); return; }
+    if (p !== newPinConfirm.trim()) { setPinError('New PINs don\u2019t match.'); return; }
+    try {
+      await storage.set('inventory-pin', p, true);
+      setSharedPin(p);
+      setPinError('');
+      setShowChangePin(false);
+      setPinInput('');
+      setNewPin('');
+      setNewPinConfirm('');
+    } catch (e) { setPinError('Could not save the new PIN. Try again.'); }
+  }
+ 
+  async function saveProducts(next) {
+    setProducts(next);
+    try { await storage.set('inventory-products', JSON.stringify(next), true); }
+    catch (e) { setError('Save failed — your change may not persist.'); }
+  }
+ 
+  async function saveLog(next) {
+    const trimmed = next.slice(0, 150);
+    setLog(trimmed);
+    try { await storage.set('inventory-log', JSON.stringify(trimmed), true); }
+    catch (e) { /* non-critical */ }
+  }
+ 
+  async function clearLog() {
+    await saveLog([]);
+    setConfirmClearLog(false);
+  }
+ 
+  async function signIn() {
+    const n = nameInput.trim();
+    if (!n) return;
+    setUser(n);
+    try { await storage.set('current-user-name', n, false); } catch (e) {}
+  }
+ 
+  async function logOut() {
+    setUser(null);
+    setNameInput('');
+    try { await storage.delete('current-user-name', false); } catch (e) {}
+  }
+ 
+  async function addProduct() {
+    if (!form.name.trim()) return;
+    const typed = form.sku.trim();
+    if (typed && products.some(p => p.sku.toLowerCase() === typed.toLowerCase())) {
+      setFormError('That SKU is already in use — pick another or leave it blank to auto-generate.');
+      return;
+    }
+    setFormError('');
+    setSaving(true);
+    const sku = typed || genSKU(products);
+    const newProduct = {
+      id: sku,
+      sku,
+      name: form.name.trim(),
+      category: form.category,
+      quantity: Number(form.quantity) || 0,
+      reorder: Number(form.reorder) || 5,
+      price: Number(form.price) || 0,
+    };
+    const next = [newProduct, ...products];
+    await saveProducts(next);
+    await saveLog([{
+      id: Date.now() + '-' + Math.random(),
+      ts: new Date().toISOString(),
+      user,
+      type: 'created',
+      sku,
+      name: newProduct.name,
+      qty: newProduct.quantity,
+      note: 'New line item added',
+    }, ...log]);
+    setForm({ name: '', sku: '', category: 'General', quantity: '', reorder: '', price: '' });
+    setShowAdd(false);
+    setSaving(false);
+  }
+ 
+  function openEdit(p) {
+    setEditTarget(p);
+    setEditForm({ name: p.name, category: p.category, reorder: String(p.reorder), price: String(p.price) });
+  }
+ 
+  async function commitEdit() {
+    if (!editForm.name.trim() || !editTarget) return;
+    const next = products.map(p => p.id === editTarget.id ? {
+      ...p,
+      name: editForm.name.trim(),
+      category: editForm.category,
+      reorder: Number(editForm.reorder) || 0,
+      price: Number(editForm.price) || 0,
+    } : p);
+    await saveProducts(next);
+    await saveLog([{
+      id: Date.now() + '-' + Math.random(),
+      ts: new Date().toISOString(),
+      user,
+      type: 'edited',
+      sku: editTarget.sku,
+      name: editForm.name.trim(),
+      qty: '',
+      note: 'Product details updated',
+    }, ...log]);
+    setEditTarget(null);
+  }
+ 
+  async function removeProduct(p) {
+    const next = products.filter(x => x.id !== p.id);
+    await saveProducts(next);
+    await saveLog([{
+      id: Date.now() + '-' + Math.random(),
+      ts: new Date().toISOString(),
+      user,
+      type: 'removed',
+      sku: p.sku,
+      name: p.name,
+      qty: p.quantity,
+      note: 'Line item deleted',
+    }, ...log]);
+  }
+ 
+  function openAdjust(p, mode) {
+    setAdjustTarget(p);
+    setAdjustMode(mode);
+    setAdjustQty('');
+    setAdjustNote('');
+  }
+ 
+  async function commitAdjust() {
+    const qty = Number(adjustQty);
+    if (!qty || qty <= 0 || !adjustTarget) return;
+    const delta = adjustMode === 'in' ? qty : -qty;
+    const nextQty = Math.max(0, adjustTarget.quantity + delta);
+    const next = products.map(p => p.id === adjustTarget.id ? { ...p, quantity: nextQty } : p);
+    await saveProducts(next);
+    await saveLog([{
+      id: Date.now() + '-' + Math.random(),
+      ts: new Date().toISOString(),
+      user,
+      type: adjustMode,
+      sku: adjustTarget.sku,
+      name: adjustTarget.name,
+      qty,
+      note: adjustNote.trim() || (adjustMode === 'in' ? 'Stock received' : 'Stock removed'),
+    }, ...log]);
+    if (adjustMode === 'out') {
+      const wasOk = adjustTarget.quantity > adjustTarget.reorder;
+      if (nextQty === 0) playAlert(true);
+      else if (wasOk && nextQty <= adjustTarget.reorder) playAlert(false);
+    }
+    setAdjustTarget(null);
+  }
+ 
+  const filtered = products.filter(p => {
+    const matchesQuery = !query || p.name.toLowerCase().includes(query.toLowerCase()) || p.sku.toLowerCase().includes(query.toLowerCase());
+    const matchesCat = catFilter === 'All' || p.category === catFilter;
+    return matchesQuery && matchesCat;
+  });
+ 
+  const totalUnits = products.reduce((a, p) => a + p.quantity, 0);
+  const totalValue = products.reduce((a, p) => a + p.quantity * p.price, 0);
+  const lowStock = products.filter(p => p.quantity <= p.reorder).length;
+ 
+  const ink = '#1B1F1D';
+  const steel = '#3D4B54';
+  const paper = '#EDEBE2';
+  const paperDark = '#E0DDD0';
+  const amber = '#E2A83C';
+  const rust = '#C1502E';
+  const moss = '#5C8A63';
+ 
+  const mono = 'ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace';
+  const display = '"Helvetica Neue", Arial, sans-serif';
+ 
+  if (loading) {
+    return (
+      <div style={{ fontFamily: display, padding: 40, textAlign: 'center', color: steel }}>
+        Loading manifest…
+      </div>
+    );
+  }
+ 
+  if (!unlocked) {
+    const isSetup = !sharedPin;
+    return (
+      <div style={{
+        fontFamily: display, minHeight: 480, background: ink, color: paper,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}>
+        <div style={{ width: '100%', maxWidth: 360 }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, color: amber, marginBottom: 8, fontWeight: 700 }}>BLESSED CHILD VENTURES</div>
+          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4, textTransform: 'uppercase' }}>{isSetup ? 'Set access PIN' : 'Enter PIN'}</div>
+          <div style={{ fontSize: 13, color: '#9A988D', marginBottom: 28 }}>
+            {isSetup
+              ? 'No PIN is set yet. Choose one — anyone with this PIN can access the manifest.'
+              : 'This manifest is locked. Ask a teammate for the shared PIN.'}
+          </div>
+          {isSetup ? (
+            <>
+              <input
+                type="password" inputMode="numeric" value={newPin} onChange={e => setNewPin(e.target.value)}
+                placeholder="Choose a PIN (4+ digits)"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 10, outline: 'none' }}
+              />
+              <input
+                type="password" inputMode="numeric" value={newPinConfirm} onChange={e => setNewPinConfirm(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && setupPin()}
+                placeholder="Confirm PIN"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 14, outline: 'none' }}
+              />
+              {pinError && <div style={{ color: rust, fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
+              <button onClick={setupPin} style={{ width: '100%', padding: '12px 14px', fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: 'pointer' }}>
+                Set PIN and continue →
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                type="password" inputMode="numeric" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && checkPin()}
+                placeholder="Shared PIN"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 14, outline: 'none' }}
+              />
+              {pinError && <div style={{ color: rust, fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
+              <button onClick={checkPin} disabled={!pinInput.trim()} style={{ width: '100%', padding: '12px 14px', fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: pinInput.trim() ? 'pointer' : 'not-allowed', opacity: pinInput.trim() ? 1 : 0.5 }}>
+                Unlock →
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+ 
+  if (!user) {
+    return (
+      <div style={{
+        fontFamily: display, minHeight: 480, background: ink, color: paper,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}>
+        <div style={{ width: '100%', maxWidth: 360 }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, color: amber, marginBottom: 8, fontWeight: 700 }}>BLESSED CHILD VENTURES</div>
+          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4, textTransform: 'uppercase' }}>Clock In</div>
+          <div style={{ fontSize: 13, color: '#9A988D', marginBottom: 28 }}>Enter your name to sign the manifest. Everyone shares this inventory.</div>
+          <input
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && signIn()}
+            placeholder="Your name"
+            style={{
+              width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15,
+              background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0,
+              fontFamily: display, marginBottom: 14, outline: 'none',
+            }}
+          />
+          <button
+            onClick={signIn}
+            disabled={!nameInput.trim()}
+            style={{
+              width: '100%', padding: '12px 14px', fontSize: 13, fontWeight: 700, letterSpacing: 1.5,
+              textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: nameInput.trim() ? 'pointer' : 'not-allowed',
+              opacity: nameInput.trim() ? 1 : 0.5,
+            }}
+          >
+            Sign In →
+          </button>
+        </div>
+      </div>
+    );
+  }
+ 
+  return (
+    <div style={{ fontFamily: display, background: paper, color: ink, minHeight: 600 }}>
+      <div style={{ background: ink, color: paper, padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: 3, color: amber, fontWeight: 700 }}>BLESSED CHILD VENTURES</div>
+          <div style={{ fontSize: 22, fontWeight: 700, textTransform: 'uppercase', letterSpacing: -0.5 }}>Stock Ledger</div>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: 12, color: '#9A988D' }}>
+          <div>Signed in: <span style={{ color: paper, fontWeight: 700 }}>{user}</span></div>
+          <button onClick={logOut} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>log out</button>
+          <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
+          <button onClick={() => { setUnlocked(false); setUser(null); setPinInput(''); }} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>lock</button>
+          <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
+          <button onClick={() => setShowChangePin(true)} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>change PIN</button>
+        </div>
+      </div>
+ 
+      {showChangePin && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => { setShowChangePin(false); setPinError(''); }}>
+          <div style={{ background: '#fff', width: 320, padding: 24, border: `2px solid ${ink}` }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>Change shared PIN</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Update access PIN</div>
+            <input
+              type="password" inputMode="numeric" placeholder="Current PIN" value={currentPinCheck}
+              onChange={e => setCurrentPinCheck(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0 }}
+            />
+            <input
+              type="password" inputMode="numeric" placeholder="New PIN (4+ digits)" value={newPin}
+              onChange={e => setNewPin(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0 }}
+            />
+            <input
+              type="password" inputMode="numeric" placeholder="Confirm new PIN" value={newPinConfirm}
+              onChange={e => setNewPinConfirm(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 12, borderRadius: 0 }}
+            />
+            {pinError && <div style={{ color: rust, fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => {
+                  if (currentPinCheck.trim() !== sharedPin) { setPinError('Current PIN is incorrect.'); return; }
+                  changePin();
+                }}
+                style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: ink, color: paper, border: 'none', cursor: 'pointer' }}
+              >
+                Save new PIN
+              </button>
+              <button onClick={() => { setShowChangePin(false); setPinError(''); setCurrentPinCheck(''); setNewPin(''); setNewPinConfirm(''); }} style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: 'none', border: `1px solid ${ink}44`, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+ 
+      {error && (
+        <div style={{ background: rust, color: '#fff', padding: '8px 24px', fontSize: 13 }}>{error}</div>
+      )}
+ 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 1, background: ink }}>
+        {[
+          { label: 'SKUs on file', value: products.length },
+          { label: 'Total units', value: totalUnits.toLocaleString() },
+          { label: 'Inventory value', value: '₵' + totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
+          { label: 'Low stock', value: lowStock, alert: lowStock > 0 },
+        ].map((s, i) => (
+          <div key={i} style={{ background: paperDark, padding: '14px 20px' }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontFamily: mono, fontSize: 24, fontWeight: 700, color: s.alert ? rust : ink }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+ 
+      <div style={{ padding: '18px 24px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', borderBottom: `1px solid ${ink}22` }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search name or SKU…"
+          style={{ flex: '1 1 200px', padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, background: paper, fontFamily: display, borderRadius: 0 }}
+        />
+        <select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, background: paper, fontFamily: display, borderRadius: 0 }}>
+          <option>All</option>
+          {CATS.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <button
+          onClick={() => setShowAdd(true)}
+          style={{ padding: '9px 18px', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: ink, color: paper, border: 'none', cursor: 'pointer' }}
+        >
+          + Add product
+        </button>
+      </div>
+ 
+      {showAdd && (
+        <div style={{ padding: '18px 24px', background: '#DFDCCB', borderBottom: `1px solid ${ink}22` }}>
+          <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 12, fontWeight: 700 }}>New line item</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
+            <input placeholder="Product name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: display }} />
+            <input placeholder="SKU (optional, auto if blank)" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: mono }} />
+            <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: display }}>
+              {CATS.map(c => <option key={c}>{c}</option>)}
+            </select>
+            <input placeholder="Starting qty" type="number" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: mono }} />
+            <input placeholder="Reorder point" type="number" value={form.reorder} onChange={e => setForm({ ...form, reorder: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: mono }} />
+            <input placeholder="Unit price (₵)" type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={{ padding: '9px 12px', fontSize: 13, border: `1px solid ${ink}44`, borderRadius: 0, fontFamily: mono }} />
+          </div>
+          {formError && <div style={{ color: rust, fontSize: 12, marginBottom: 10 }}>{formError}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={addProduct} disabled={!form.name.trim() || saving} style={{ padding: '9px 18px', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: moss, color: '#fff', border: 'none', cursor: 'pointer', opacity: form.name.trim() ? 1 : 0.5 }}>
+              {saving ? 'Saving…' : 'Save item'}
+            </button>
+            <button onClick={() => { setShowAdd(false); setFormError(''); }} style={{ padding: '9px 18px', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: 'none', color: ink, border: `1px solid ${ink}44`, cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+ 
+      <div style={{ padding: '20px 24px' }}>
+        {products.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: steel }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>The shelf is empty</div>
+            <div style={{ fontSize: 13 }}>Add your first product to start the manifest.</div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: steel, fontSize: 13 }}>No items match that search.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+            {filtered.map(p => {
+              const pct = p.reorder > 0 ? (p.quantity / (p.reorder * 2)) * 100 : (p.quantity > 0 ? 100 : 0);
+              const tone = p.quantity === 0 ? 'critical' : p.quantity <= p.reorder ? 'low' : 'ok';
+              return (
+                <div key={p.id} style={{ background: '#fff', border: `1px solid ${ink}22`, position: 'relative' }}>
+                  <div style={{ padding: '10px 14px', borderBottom: `1px dashed ${ink}44` }}>
+                    <Barcode seed={p.sku} />
+                  </div>
+                  <div style={{ padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: steel }}>{p.sku}</div>
+                      <div style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: steel }}>{p.category}</div>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 10px' }}>{p.name}</div>
+ 
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                      <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: tone === 'critical' ? rust : tone === 'low' ? '#8a6414' : moss }}>{p.quantity}</span>
+                      <span style={{ fontSize: 11, color: steel }}>units · reorder at {p.reorder}</span>
+                    </div>
+                    <Gauge pct={pct} tone={tone} />
+ 
+                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '10px 0 12px', fontSize: 12, color: steel }}>
+                      <span>₵{p.price.toFixed(2)} / unit</span>
+                      <span>₵{(p.price * p.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })} value</span>
+                    </div>
+ 
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => openAdjust(p, 'in')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: moss, color: '#fff', border: 'none', cursor: 'pointer' }}>+ In</button>
+                      <button onClick={() => openAdjust(p, 'out')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: 'pointer' }}>− Out</button>
+                      <button onClick={() => openEdit(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: steel, border: `1px solid ${ink}33`, cursor: 'pointer' }}>Edit</button>
+                      <button onClick={() => removeProduct(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: rust, border: `1px solid ${rust}55`, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  </div>
+                  {tone !== 'ok' && (
+                    <div style={{ position: 'absolute', top: 0, right: 0, background: tone === 'critical' ? rust : amber, color: tone === 'critical' ? '#fff' : ink, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', padding: '3px 8px' }}>
+                      {tone === 'critical' ? 'Out of stock' : 'Low stock'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+ 
+      {adjustTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setAdjustTarget(null)}>
+          <div style={{ background: '#fff', width: 320, padding: 24, border: `2px solid ${ink}` }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>{adjustMode === 'in' ? 'Receive stock' : 'Remove stock'}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>{adjustTarget.name}</div>
+            <input
+              type="number" autoFocus placeholder="Quantity" value={adjustQty}
+              onChange={e => setAdjustQty(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 15, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0 }}
+            />
+            <input
+              placeholder="Note (optional)" value={adjustNote}
+              onChange={e => setAdjustNote(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 13, border: `1px solid ${ink}44`, marginBottom: 16, borderRadius: 0, fontFamily: display }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={commitAdjust} disabled={!adjustQty || Number(adjustQty) <= 0} style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: adjustMode === 'in' ? moss : amber, color: adjustMode === 'in' ? '#fff' : ink, border: 'none', cursor: 'pointer' }}>
+                Confirm
+              </button>
+              <button onClick={() => setAdjustTarget(null)} style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: 'none', border: `1px solid ${ink}44`, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+ 
+      {editTarget && editForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setEditTarget(null)}>
+          <div style={{ background: '#fff', width: 320, padding: 24, border: `2px solid ${ink}` }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>Edit product · {editTarget.sku}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>{editTarget.name}</div>
+            <input
+              placeholder="Product name" value={editForm.name}
+              onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0, fontFamily: display }}
+            />
+            <select
+              value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0, fontFamily: display }}
+            >
+              {CATS.map(c => <option key={c}>{c}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input
+                type="number" placeholder="Reorder point" value={editForm.reorder}
+                onChange={e => setEditForm({ ...editForm, reorder: e.target.value })}
+                style={{ flex: 1, boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, borderRadius: 0 }}
+              />
+              <input
+                type="number" placeholder="Unit price (₵)" value={editForm.price}
+                onChange={e => setEditForm({ ...editForm, price: e.target.value })}
+                style={{ flex: 1, boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, borderRadius: 0 }}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: steel, marginBottom: 12 }}>Quantity and SKU can't be changed here — use + In / − Out to adjust stock.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={commitEdit} disabled={!editForm.name.trim()} style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: ink, color: paper, border: 'none', cursor: 'pointer' }}>
+                Save changes
+              </button>
+              <button onClick={() => setEditTarget(null)} style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: 'none', border: `1px solid ${ink}44`, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+ 
+      <div style={{ padding: '20px 24px 40px', borderTop: `1px solid ${ink}22` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, fontWeight: 700 }}>Activity log</div>
+          {log.length > 0 && !confirmClearLog && (
+            <button onClick={() => setConfirmClearLog(true)} style={{ background: 'none', border: 'none', color: rust, fontSize: 11, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>clear log</button>
+          )}
+          {confirmClearLog && (
+            <span style={{ fontSize: 11, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ color: steel }}>Clear all history?</span>
+              <button onClick={clearLog} style={{ background: rust, color: '#fff', border: 'none', padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Yes, clear</button>
+              <button onClick={() => setConfirmClearLog(false)} style={{ background: 'none', border: `1px solid ${ink}44`, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}>Cancel</button>
+            </span>
+          )}
+        </div>
+        {log.length === 0 ? (
+          <div style={{ fontSize: 12, color: steel }}>No movements recorded yet.</div>
+        ) : (
+          <div style={{ fontFamily: mono, fontSize: 12, maxHeight: 260, overflowY: 'auto', border: `1px solid ${ink}22` }}>
+            {log.slice(0, 40).map((e, i) => (
+              <div key={e.id} style={{ display: 'flex', gap: 10, padding: '6px 10px', background: i % 2 === 0 ? '#fff' : paperDark, borderBottom: `1px solid ${ink}11` }}>
+                <span style={{ color: steel, minWidth: 130 }}>{new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{ minWidth: 90, fontWeight: 700 }}>{e.user}</span>
+                <span style={{
+                  minWidth: 60, textTransform: 'uppercase', fontSize: 10, fontWeight: 700,
+                  color: e.type === 'in' ? moss : e.type === 'out' ? '#8a6414' : e.type === 'removed' ? rust : e.type === 'edited' ? steel : steel,
+                }}>{e.type}</span>
+                <span style={{ minWidth: 80, color: steel }}>{e.sku}</span>
+                <span style={{ flex: 1 }}>{e.name}</span>
+                <span style={{ fontWeight: 700 }}>{e.type === 'out' ? '−' : e.type === 'in' ? '+' : ''}{e.qty}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</script>
+</body>
+</html>
+ 
+
