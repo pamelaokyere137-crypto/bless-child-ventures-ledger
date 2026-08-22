@@ -740,7 +740,7 @@ function InventoryApp() {
                   <button onClick={() => openAdjust(p, 'in')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: moss, color: '#fff', border: 'none', cursor: 'pointer' }}>+ In</button>
                   <button onClick={() => openAdjust(p, 'out')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: 'pointer' }}>− Out</button>
                   <button onClick={() => openEdit(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: steel, border: `1px solid ${ink}33`, cursor: 'pointer' }}>Edit</button>
-                  <button onClick={() => { removeProduct(p); setSelectedId(null); }} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: rust, border: `1px solid ${rust}55`, cursor: 'pointer' }}>✕</button>
+                  <button onClick={() => { removeProduct(p); setSelectedId(null); }} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: 'none', color: rust, border: `1px solid ${rust}55`, cursor: 'pointer' }}>Delete</button>
                 </div>
               </div>
               {tone !== 'ok' && (
