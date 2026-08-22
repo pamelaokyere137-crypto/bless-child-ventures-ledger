@@ -182,6 +182,9 @@ function InventoryApp() {
   const [editTarget, setEditTarget] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useState('dashboard');
+  const [selectedId, setSelectedId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -529,6 +532,27 @@ function InventoryApp() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: 0, background: paperDark, borderBottom: `1px solid ${ink}22`, overflowX: 'auto' }}>
+        {[
+          { key: 'dashboard', label: 'Dashboard' },
+          { key: 'products', label: 'Products' },
+          { key: 'log', label: 'Activity Log' },
+        ].map(m => (
+          <button
+            key={m.key}
+            onClick={() => { setView(m.key); setSelectedId(null); }}
+            style={{
+              padding: '12px 20px', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              background: view === m.key ? paper : 'none', color: view === m.key ? ink : steel,
+              border: 'none', borderBottom: view === m.key ? `2px solid ${amber}` : '2px solid transparent',
+              cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       {showChangePin && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => { setShowChangePin(false); setPinError(''); }}>
           <div style={{ background: '#fff', width: 320, padding: 24, border: `2px solid ${ink}` }} onClick={e => e.stopPropagation()}>
@@ -572,6 +596,7 @@ function InventoryApp() {
         <div style={{ background: rust, color: '#fff', padding: '8px 24px', fontSize: 13 }}>{error}</div>
       )}
 
+      {view === 'dashboard' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 1, background: ink }}>
         {[
           { label: 'SKUs on file', value: products.length },
@@ -579,13 +604,15 @@ function InventoryApp() {
           { label: 'Inventory value', value: '₵' + totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
           { label: 'Low stock', value: lowStock, alert: lowStock > 0 },
         ].map((s, i) => (
-          <div key={i} style={{ background: paperDark, padding: '14px 20px' }}>
+          <div key={i} onClick={() => setView('products')} style={{ background: paperDark, padding: '14px 20px', cursor: 'pointer' }}>
             <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>{s.label}</div>
             <div style={{ fontFamily: mono, fontSize: 24, fontWeight: 700, color: s.alert ? rust : ink }}>{s.value}</div>
           </div>
         ))}
       </div>
+      )}
 
+      {view === 'products' && !selectedId && (
       <div style={{ padding: '18px 24px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', borderBottom: `1px solid ${ink}22` }}>
         <input
           value={query}
@@ -604,8 +631,9 @@ function InventoryApp() {
           + Add product
         </button>
       </div>
+      )}
 
-      {showAdd && (
+      {showAdd && view === 'products' && (
         <div style={{ padding: '18px 24px', background: '#DFDCCB', borderBottom: `1px solid ${ink}22` }}>
           <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 12, fontWeight: 700 }}>New line item</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
@@ -630,6 +658,7 @@ function InventoryApp() {
         </div>
       )}
 
+      {view === 'products' && !selectedId && (
       <div style={{ padding: '20px 24px' }}>
         {products.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: steel }}>
@@ -639,51 +668,86 @@ function InventoryApp() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: steel, fontSize: 13 }}>No items match that search.</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-            {filtered.map(p => {
-              const pct = p.reorder > 0 ? (p.quantity / (p.reorder * 2)) * 100 : (p.quantity > 0 ? 100 : 0);
+          <div style={{ border: `1px solid ${ink}22` }}>
+            {filtered.map((p, i) => {
               const tone = p.quantity === 0 ? 'critical' : p.quantity <= p.reorder ? 'low' : 'ok';
               return (
-                <div key={p.id} style={{ background: '#fff', border: `1px solid ${ink}22`, position: 'relative' }}>
-                  <div style={{ padding: '10px 14px', borderBottom: `1px dashed ${ink}44` }}>
-                    <Barcode seed={p.sku} />
+                <div
+                  key={p.id}
+                  onClick={() => setSelectedId(p.id)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '14px 16px', cursor: 'pointer', background: i % 2 === 0 ? '#fff' : paperDark,
+                    borderBottom: `1px solid ${ink}11`,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: steel, fontFamily: mono, marginTop: 2 }}>{p.sku} · {p.category}</div>
                   </div>
-                  <div style={{ padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <div style={{ fontFamily: mono, fontSize: 11, color: steel }}>{p.sku}</div>
-                      <div style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: steel }}>{p.category}</div>
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 10px' }}>{p.name}</div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                      <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: tone === 'critical' ? rust : tone === 'low' ? '#8a6414' : moss }}>{p.quantity}</span>
-                      <span style={{ fontSize: 11, color: steel }}>units · reorder at {p.reorder}</span>
-                    </div>
-                    <Gauge pct={pct} tone={tone} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: '10px 0 12px', fontSize: 12, color: steel }}>
-                      <span>₵{p.price.toFixed(2)} / unit</span>
-                      <span>₵{(p.price * p.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })} value</span>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => openAdjust(p, 'in')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: moss, color: '#fff', border: 'none', cursor: 'pointer' }}>+ In</button>
-                      <button onClick={() => openAdjust(p, 'out')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: 'pointer' }}>− Out</button>
-                      <button onClick={() => openEdit(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: steel, border: `1px solid ${ink}33`, cursor: 'pointer' }}>Edit</button>
-                      <button onClick={() => removeProduct(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: rust, border: `1px solid ${rust}55`, cursor: 'pointer' }}>✕</button>
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {tone !== 'ok' && (
+                      <span style={{ background: tone === 'critical' ? rust : amber, color: tone === 'critical' ? '#fff' : ink, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', padding: '3px 8px' }}>
+                        {tone === 'critical' ? 'Out of stock' : 'Low stock'}
+                      </span>
+                    )}
+                    <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 700, color: tone === 'critical' ? rust : tone === 'low' ? '#8a6414' : moss }}>{p.quantity}</span>
+                    <span style={{ color: steel, fontSize: 18 }}>›</span>
                   </div>
-                  {tone !== 'ok' && (
-                    <div style={{ position: 'absolute', top: 0, right: 0, background: tone === 'critical' ? rust : amber, color: tone === 'critical' ? '#fff' : ink, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', padding: '3px 8px' }}>
-                      {tone === 'critical' ? 'Out of stock' : 'Low stock'}
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+      )}
+
+      {view === 'products' && selectedId && (() => {
+        const p = products.find(x => x.id === selectedId);
+        if (!p) { setSelectedId(null); return null; }
+        const pct = p.reorder > 0 ? (p.quantity / (p.reorder * 2)) * 100 : (p.quantity > 0 ? 100 : 0);
+        const tone = p.quantity === 0 ? 'critical' : p.quantity <= p.reorder ? 'low' : 'ok';
+        return (
+          <div style={{ padding: '20px 24px' }}>
+            <button onClick={() => setSelectedId(null)} style={{ background: 'none', border: 'none', color: steel, fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 16 }}>← Back to products</button>
+            <div style={{ maxWidth: 360, background: '#fff', border: `1px solid ${ink}22`, position: 'relative' }}>
+              <div style={{ padding: '10px 14px', borderBottom: `1px dashed ${ink}44` }}>
+                <Barcode seed={p.sku} />
+              </div>
+              <div style={{ padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <div style={{ fontFamily: mono, fontSize: 11, color: steel }}>{p.sku}</div>
+                  <div style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: steel }}>{p.category}</div>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 10px' }}>{p.name}</div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: tone === 'critical' ? rust : tone === 'low' ? '#8a6414' : moss }}>{p.quantity}</span>
+                  <span style={{ fontSize: 11, color: steel }}>units · reorder at {p.reorder}</span>
+                </div>
+                <Gauge pct={pct} tone={tone} />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '10px 0 12px', fontSize: 12, color: steel }}>
+                  <span>₵{p.price.toFixed(2)} / unit</span>
+                  <span>₵{(p.price * p.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })} value</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => openAdjust(p, 'in')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: moss, color: '#fff', border: 'none', cursor: 'pointer' }}>+ In</button>
+                  <button onClick={() => openAdjust(p, 'out')} style={{ flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', background: amber, color: ink, border: 'none', cursor: 'pointer' }}>− Out</button>
+                  <button onClick={() => openEdit(p)} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: steel, border: `1px solid ${ink}33`, cursor: 'pointer' }}>Edit</button>
+                  <button onClick={() => { removeProduct(p); setSelectedId(null); }} style={{ padding: '7px 10px', fontSize: 11, background: 'none', color: rust, border: `1px solid ${rust}55`, cursor: 'pointer' }}>✕</button>
+                </div>
+              </div>
+              {tone !== 'ok' && (
+                <div style={{ position: 'absolute', top: 0, right: 0, background: tone === 'critical' ? rust : amber, color: tone === 'critical' ? '#fff' : ink, fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', padding: '3px 8px' }}>
+                  {tone === 'critical' ? 'Out of stock' : 'Low stock'}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {adjustTarget && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setAdjustTarget(null)}>
@@ -753,6 +817,29 @@ function InventoryApp() {
         </div>
       )}
 
+      {view === 'dashboard' && (
+        <div style={{ padding: '20px 24px 40px' }}>
+          <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, fontWeight: 700, marginBottom: 14 }}>Recent activity</div>
+          {log.length === 0 ? (
+            <div style={{ fontSize: 12, color: steel }}>No movements recorded yet.</div>
+          ) : (
+            <div style={{ fontFamily: mono, fontSize: 12, border: `1px solid ${ink}22` }}>
+              {log.slice(0, 5).map((e, i) => (
+                <div key={e.id} style={{ display: 'flex', gap: 10, padding: '6px 10px', background: i % 2 === 0 ? '#fff' : paperDark, borderBottom: `1px solid ${ink}11` }}>
+                  <span style={{ color: steel, minWidth: 130 }}>{new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span style={{ minWidth: 90, fontWeight: 700 }}>{e.user}</span>
+                  <span style={{ minWidth: 60, textTransform: 'uppercase', fontSize: 10, fontWeight: 700, color: e.type === 'in' ? moss : e.type === 'out' ? '#8a6414' : e.type === 'removed' ? rust : steel }}>{e.type}</span>
+                  <span style={{ flex: 1 }}>{e.name}</span>
+                  <span style={{ fontWeight: 700 }}>{e.type === 'out' ? '−' : e.type === 'in' ? '+' : ''}{e.qty}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setView('log')} style={{ marginTop: 12, background: 'none', border: 'none', color: amber, fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>View full activity log →</button>
+        </div>
+      )}
+
+      {view === 'log' && (
       <div style={{ padding: '20px 24px 40px', borderTop: `1px solid ${ink}22` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, fontWeight: 700 }}>Activity log</div>
@@ -787,6 +874,7 @@ function InventoryApp() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
