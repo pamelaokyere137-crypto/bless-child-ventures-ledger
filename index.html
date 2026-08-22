@@ -22,6 +22,10 @@
   <div style="padding:40px; text-align:center; color:#3D4B54;">Loading…</div>
 </div>
 <script type="text/babel">
+function isStrongPassword(p) {
+  return p.length >= 8 && /[a-zA-Z]/.test(p) && /[0-9]/.test(p);
+}
+
 function boot() {
   const root = ReactDOM.createRoot(document.getElementById('root'));
   root.render(<InventoryApp />);
@@ -221,7 +225,7 @@ function InventoryApp() {
 
   async function setupPin() {
     const p = newPin.trim();
-    if (p.length < 4) { setPinError('PIN must be at least 4 digits.'); return; }
+    if (!isStrongPassword(p)) { setPinError('Password must be at least 8 characters and include both letters and numbers.'); return; }
     if (p !== newPinConfirm.trim()) { setPinError('PINs don\u2019t match.'); return; }
     try {
       await storage.set('inventory-pin', p, true);
@@ -242,7 +246,7 @@ function InventoryApp() {
 
   async function changePin() {
     const p = newPin.trim();
-    if (p.length < 4) { setPinError('New PIN must be at least 4 digits.'); return; }
+    if (!isStrongPassword(p)) { setPinError('New password must be at least 8 characters and include both letters and numbers.'); return; }
     if (p !== newPinConfirm.trim()) { setPinError('New PINs don\u2019t match.'); return; }
     try {
       await storage.set('inventory-pin', p, true);
@@ -435,23 +439,23 @@ function InventoryApp() {
       }}>
         <div style={{ width: '100%', maxWidth: 360 }}>
           <div style={{ fontSize: 11, letterSpacing: 3, color: amber, marginBottom: 8, fontWeight: 700 }}>BLESSED CHILD VENTURES</div>
-          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4, textTransform: 'uppercase' }}>{isSetup ? 'Set access PIN' : 'Enter PIN'}</div>
+          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: -0.5, marginBottom: 4, textTransform: 'uppercase' }}>{isSetup ? 'Set access password' : 'Enter password'}</div>
           <div style={{ fontSize: 13, color: '#9A988D', marginBottom: 28 }}>
             {isSetup
-              ? 'No PIN is set yet. Choose one — anyone with this PIN can access the manifest.'
-              : 'This manifest is locked. Ask a teammate for the shared PIN.'}
+              ? 'No password is set yet. Choose one — anyone with this password can access the manifest.'
+              : 'This manifest is locked. Ask a teammate for the shared password.'}
           </div>
           {isSetup ? (
             <>
               <input
-                type="password" inputMode="numeric" value={newPin} onChange={e => setNewPin(e.target.value)}
-                placeholder="Choose a PIN (4+ digits)"
+                type="password" value={newPin} onChange={e => setNewPin(e.target.value)}
+                placeholder="Choose a password (8+ chars, letters + numbers)"
                 style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 10, outline: 'none' }}
               />
               <input
-                type="password" inputMode="numeric" value={newPinConfirm} onChange={e => setNewPinConfirm(e.target.value)}
+                type="password" value={newPinConfirm} onChange={e => setNewPinConfirm(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && setupPin()}
-                placeholder="Confirm PIN"
+                placeholder="Confirm password"
                 style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 14, outline: 'none' }}
               />
               {pinError && <div style={{ color: rust, fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
@@ -462,9 +466,9 @@ function InventoryApp() {
           ) : (
             <>
               <input
-                type="password" inputMode="numeric" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)}
+                type="password" autoFocus value={pinInput} onChange={e => setPinInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && checkPin()}
-                placeholder="Shared PIN"
+                placeholder="Shared password"
                 style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', fontSize: 15, background: '#262B27', border: `1px solid ${steel}`, color: paper, borderRadius: 0, fontFamily: mono, marginBottom: 14, outline: 'none' }}
               />
               {pinError && <div style={{ color: rust, fontSize: 12, marginBottom: 12 }}>{pinError}</div>}
@@ -528,7 +532,7 @@ function InventoryApp() {
           <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
           <button onClick={() => { setUnlocked(false); setUser(null); setPinInput(''); }} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>lock</button>
           <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
-          <button onClick={() => setShowChangePin(true)} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>change PIN</button>
+          <button onClick={() => setShowChangePin(true)} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>change password</button>
         </div>
       </div>
 
@@ -556,20 +560,20 @@ function InventoryApp() {
       {showChangePin && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,31,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => { setShowChangePin(false); setPinError(''); }}>
           <div style={{ background: '#fff', width: 320, padding: 24, border: `2px solid ${ink}` }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>Change shared PIN</div>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Update access PIN</div>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: steel, marginBottom: 4 }}>Change shared password</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Update access password</div>
             <input
-              type="password" inputMode="numeric" placeholder="Current PIN" value={currentPinCheck}
+              type="password" placeholder="Current password" value={currentPinCheck}
               onChange={e => setCurrentPinCheck(e.target.value)}
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0 }}
             />
             <input
-              type="password" inputMode="numeric" placeholder="New PIN (4+ digits)" value={newPin}
+              type="password" placeholder="New password (8+ chars, letters + numbers)" value={newPin}
               onChange={e => setNewPin(e.target.value)}
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 10, borderRadius: 0 }}
             />
             <input
-              type="password" inputMode="numeric" placeholder="Confirm new PIN" value={newPinConfirm}
+              type="password" placeholder="Confirm new password" value={newPinConfirm}
               onChange={e => setNewPinConfirm(e.target.value)}
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 14, fontFamily: mono, border: `1px solid ${ink}44`, marginBottom: 12, borderRadius: 0 }}
             />
@@ -577,7 +581,7 @@ function InventoryApp() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => {
-                  if (currentPinCheck.trim() !== sharedPin) { setPinError('Current PIN is incorrect.'); return; }
+                  if (currentPinCheck.trim() !== sharedPin) { setPinError('Current password is incorrect.'); return; }
                   changePin();
                 }}
                 style={{ flex: 1, padding: '10px 0', fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', background: ink, color: paper, border: 'none', cursor: 'pointer' }}
