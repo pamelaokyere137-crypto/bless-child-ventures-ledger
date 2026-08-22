@@ -21,18 +21,19 @@
 <div id="root">
   <div style="padding:40px; text-align:center; color:#3D4B54;">Loading…</div>
 </div>
-<script type="text/babel" data-type="module">
-window.addEventListener('DOMContentLoaded', function() {
-  function boot() {
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<InventoryApp />);
-  }
+<script type="text/babel">
+function boot() {
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<InventoryApp />);
+}
+function startWhenReady() {
   if (window.firebaseModules) {
     boot();
   } else {
     window.addEventListener('firebase-ready', boot, { once: true });
   }
-});
+}
+startWhenReady();
 const { useState, useEffect, useCallback } = React;
 
 const firebaseConfig = {
