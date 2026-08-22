@@ -214,6 +214,10 @@ function InventoryApp() {
         const u = await storage.get('current-user-name', false);
         if (u && u.value) { setUser(u.value); setNameInput(u.value); }
       } catch (e) { /* no saved name */ }
+      try {
+        const remembered = await storage.get('device-unlocked', false);
+        if (remembered && remembered.value === 'true') { setUnlocked(true); }
+      } catch (e) { /* not remembered, stays locked */ }
     } catch (e) {
       setError('Could not load the manifest. Try refreshing.');
     } finally {
@@ -239,6 +243,8 @@ function InventoryApp() {
     if (pinInput.trim() === sharedPin) {
       setUnlocked(true);
       setPinError('');
+      loadAll();
+      try { storage.set('device-unlocked', 'true', false); } catch (e) {}
     } else {
       setPinError('Wrong PIN. Try again.');
     }
@@ -530,7 +536,7 @@ function InventoryApp() {
           <div>Signed in: <span style={{ color: paper, fontWeight: 700 }}>{user}</span></div>
           <button onClick={logOut} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>log out</button>
           <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
-          <button onClick={() => { setUnlocked(false); setUser(null); setPinInput(''); }} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>lock</button>
+          <button onClick={() => { setUnlocked(false); setUser(null); setPinInput(''); try { storage.set('device-unlocked', 'false', false); } catch (e) {} }} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>lock</button>
           <span style={{ margin: '0 6px', color: '#5a584e' }}>·</span>
           <button onClick={() => setShowChangePin(true)} style={{ background: 'none', border: 'none', color: amber, fontSize: 11, cursor: 'pointer', padding: 0, marginTop: 4, textDecoration: 'underline' }}>change password</button>
         </div>
