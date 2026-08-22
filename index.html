@@ -227,6 +227,28 @@ function InventoryApp() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  useEffect(() => {
+    if (!unlocked) return;
+    const TIMEOUT_MS = 20 * 60 * 1000;
+    let timer = setTimeout(doAutoLock, TIMEOUT_MS);
+    function doAutoLock() {
+      setUnlocked(false);
+      setUser(null);
+      setPinInput('');
+      try { storage.set('device-unlocked', 'false', false); } catch (e) {}
+    }
+    function resetTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(doAutoLock, TIMEOUT_MS);
+    }
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(ev => window.addEventListener(ev, resetTimer));
+    return () => {
+      clearTimeout(timer);
+      events.forEach(ev => window.removeEventListener(ev, resetTimer));
+    };
+  }, [unlocked]);
+
   async function setupPin() {
     const p = newPin.trim();
     if (!isStrongPassword(p)) { setPinError('Password must be at least 8 characters and include both letters and numbers.'); return; }
